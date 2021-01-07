@@ -326,6 +326,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onCharacteristicReadRequest(BluetoothDevice device, int requestId, int offset,
                                                 BluetoothGattCharacteristic characteristic) {
+            Log.d(TAG, "onCharacteristicReadRequest");
             if (SensorProfile.DATA_R.equals(characteristic.getUuid())) {
                 Log.i(TAG, "onCharacteristicReadRequest, offset=" + offset + " mBufIdx=" + mBufIdx);
                 byte[] payload;
@@ -352,7 +353,9 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+            Log.d(TAG, "onCharacteristicWriteRequest");
             if (SensorProfile.DATA_W.equals(characteristic.getUuid())) {
+                initCounter(device);
                 Log.d(TAG, "onCharacteristicWriteRequest, value=" + String.format("0x%2x%2x", value[1], value[0]));
                 if (responseNeeded)
                     mBluetoothGattServer.sendResponse(device, requestId, GATT_SUCCESS, offset, value);
@@ -367,6 +370,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onDescriptorReadRequest(BluetoothDevice device, int requestId, int offset,
                                             BluetoothGattDescriptor descriptor) {
+            Log.d(TAG, "onDescriptorReadRequest");
             if (SensorProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
                 Log.d(TAG, "Config descriptor read");
                 byte[] returnValue;
@@ -389,13 +393,11 @@ public class MainActivity extends AppCompatActivity {
                                              BluetoothGattDescriptor descriptor,
                                              boolean preparedWrite, boolean responseNeeded,
                                              int offset, byte[] value) {
+            Log.d(TAG, "onDescriptorWriteRequest");
             if (SensorProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
                 if (Arrays.equals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE, value)) {
                     Log.d(TAG, "Subscribe device to notifications: " + device);
-                    mRegisteredDevice = device;
-                    mCounter = 0;
-                    mbCount = true;
-                    mCounterThread.start();
+                    initCounter(device);
                 } else if (Arrays.equals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE, value)) {
                     Log.d(TAG, "Unsubscribe device from notifications: " + device);
                     mRegisteredDevice = null;
@@ -412,6 +414,13 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
+        private void initCounter(BluetoothDevice device){
+            mRegisteredDevice = device;
+            mCounter = 0;
+            mbCount = true;
+            mCounterThread.start();
+        }
+
         @Override
         public void onMtuChanged(BluetoothDevice device, int mtu) {
             mMaxPayloadSize = mtu - 3;
@@ -420,6 +429,7 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public void onNotificationSent(BluetoothDevice device, int status) {
+            Log.d(TAG, "onNotificationSent");
             if (mPendingOperation instanceof Notify)
             {
                 endOperation();
@@ -428,6 +438,7 @@ public class MainActivity extends AppCompatActivity {
     };
 
     private void notifyRegisteredDevices(UUID characUUID, byte[] val) {
+        Log.d(TAG, "notifyRegisteredDevices");
         BluetoothGattCharacteristic characteristic =
                 mBluetoothGattServer.getService(SensorProfile.SENSOR_SERVICE).getCharacteristic(characUUID);
 
