@@ -18,6 +18,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.hardware.Sensor;
 import android.os.Bundle;
 import android.os.ParcelUuid;
 import android.os.TsManager;
@@ -28,7 +29,8 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import java.nio.ByteBuffer;
 import java.util.Arrays;
-import java.util.HashSet;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 import static android.bluetooth.BluetoothGatt.GATT_FAILURE;
 import static android.bluetooth.BluetoothGatt.GATT_SUCCESS;
@@ -41,7 +43,7 @@ public class MainActivity extends AppCompatActivity {
     private BluetoothManager mBluetoothManager;
     private BluetoothGattServer mBluetoothGattServer;
     private BluetoothLeAdvertiser mBluetoothLeAdvertiser;
-    /* Notification subscriber */
+    /* Notify subscriber */
     private BluetoothDevice mRegisteredDevice = null;
 
     final int BUF_SIZE = 400;
@@ -56,7 +58,8 @@ public class MainActivity extends AppCompatActivity {
         try {
             while(mbCount) {
                 mBufIdx = mPacketCount = 0;
-                notifyRegisteredDevices();
+                byte[] value = ByteBuffer.allocate(4).putInt(mCounter).array();
+                enqueueOperation(new Notify(SensorProfile.DATA_R, value));
                 Thread.sleep(1000);
                 mCounter++;
             }
@@ -65,6 +68,27 @@ public class MainActivity extends AppCompatActivity {
 
         }
     });
+
+    abstract class BleOperationType { }
+
+    class Notify extends BleOperationType {
+        UUID mCharacteristic;
+        byte[] mByteValue = null;
+        String mStrValue = null;
+
+        Notify(UUID characteristic, byte[] value) {
+            mCharacteristic = characteristic;
+            mByteValue = value;
+        }
+
+        Notify(UUID characteristic, String value) {
+            mCharacteristic = characteristic;
+            mStrValue = value;
+        }
+    }
+
+    private ConcurrentLinkedQueue<BleOperationType> mOperationQueue = new ConcurrentLinkedQueue<>();
+    private BleOperationType mPendingOperation = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -83,7 +107,8 @@ public class MainActivity extends AppCompatActivity {
 
         Button btnNotify = findViewById(R.id.Notify);
         btnNotify.setOnClickListener(v -> {
-            notifyRegisteredDevices();
+            byte[] value = ByteBuffer.allocate(4).putInt(mCounter).array();
+            notifyRegisteredDevices(SensorProfile.DATA_R, value);
         });
 
         //Init mBuf
@@ -328,10 +353,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
             if (SensorProfile.DATA_W.equals(characteristic.getUuid())) {
-                Log.d(TAG, "onCharacteristicWriteRequest, value size=" + value.length);
-                for (byte val:value) {
-                    Log.d(TAG, "onCharacteristicWriteRequest. val=" + val);
-                }
+                Log.d(TAG, "onCharacteristicWriteRequest, value=" + String.format("0x%2x%2x", value[1], value[0]));
                 if (responseNeeded)
                     mBluetoothGattServer.sendResponse(device, requestId, GATT_SUCCESS, offset, value);
             } else {
@@ -397,32 +419,60 @@ public class MainActivity extends AppCompatActivity {
         }
 
         @Override
-        public void onServiceAdded(int status, BluetoothGattService service) {
-            Log.d(TAG, "onServiceAdded");
-        }
-
-
-        @Override
-        public void onExecuteWrite(BluetoothDevice device, int requestId, boolean execute) {
-            Log.d(TAG, "onExecuteWrite");
-        }
-
-        @Override
         public void onNotificationSent(BluetoothDevice device, int status) {
-            Log.d(TAG, "onNotificationSent");
+            if (mPendingOperation instanceof Notify)
+            {
+                endOperation();
+            }
         }
     };
 
-    private void notifyRegisteredDevices() {
+    private void notifyRegisteredDevices(UUID characUUID, byte[] val) {
         BluetoothGattCharacteristic characteristic =
-                mBluetoothGattServer.getService(SensorProfile.SENSOR_SERVICE).getCharacteristic(SensorProfile.DATA_R);
+                mBluetoothGattServer.getService(SensorProfile.SENSOR_SERVICE).getCharacteristic(characUUID);
 
         if (mRegisteredDevice != null)
         {
-            byte[] value = ByteBuffer.allocate(4).putInt(mCounter).array();
-            characteristic.setValue(value);
+            characteristic.setValue(val);
             mBluetoothGattServer.notifyCharacteristicChanged(mRegisteredDevice, characteristic, false);
             Log.d(TAG, "notifyRegisteredDevices " + mCounter);
         }
+    }
+
+    synchronized void enqueueOperation(BleOperationType operation) {
+        mOperationQueue.add(operation);
+        if (mPendingOperation == null)
+        {
+            executeOperation();
+        }
+    }
+
+    synchronized void executeOperation() {
+        if (mPendingOperation != null)
+        {
+            Log.e(TAG, "executeOperation() called when an operation is pending, aborting.");
+            return;
+        }
+
+        BleOperationType operation = mOperationQueue.poll();
+        if (operation == null)
+        {
+            return;
+        }
+
+        mPendingOperation = operation;
+        if (operation instanceof Notify)
+        {
+            Notify op = (Notify)operation;
+
+            if (op.mByteValue != null)
+                notifyRegisteredDevices(op.mCharacteristic, op.mByteValue);
+            //TODO: add implementation for string/other data types
+        }
+    }
+
+    synchronized void endOperation() {
+        mPendingOperation = null;
+        executeOperation();
     }
 }
