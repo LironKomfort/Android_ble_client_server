@@ -18,10 +18,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
-import android.hardware.Sensor;
+
 import android.os.Bundle;
 import android.os.ParcelUuid;
-import android.os.TsManager;
 import android.util.Log;
 import android.widget.Button;
 
@@ -125,9 +124,8 @@ public class MainActivity extends AppCompatActivity {
             finish();
         }
 
-        TsManager manager = getSystemService(TsManager.class);
-        boolean isNameChanged = BluetoothAdapter.getDefaultAdapter().setName(manager.getUniqueId());
-        Log.d(TAG, "Set BT device name " + manager.getUniqueId() + ": " + isNameChanged);
+        boolean isNameChanged = BluetoothAdapter.getDefaultAdapter().setName("DonisiSensor");
+        Log.d(TAG, "Set BT device name DonisiSensor: " + isNameChanged);
 
         // Register for system Bluetooth events
         IntentFilter filter = new IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED);
