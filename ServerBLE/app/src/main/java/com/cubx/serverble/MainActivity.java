@@ -68,6 +68,27 @@ public class MainActivity extends AppCompatActivity {
         }
     });
 
+
+    byte[] mBuf2 = new byte[BUF_SIZE];
+    int mBufIdx2 = 0;
+    byte mPacketCount2 = 0;
+    boolean mbCount2 = false;
+    byte mCounter2 = 0;
+    Thread mCounterThread2 = new Thread(()->{
+        try {
+            while(mbCount2) {
+                mBufIdx2 = mPacketCount2 = 0;
+                byte[] value = ByteBuffer.allocate(4).putInt(mCounter2).array();
+                enqueueOperation(new Notify(SensorProfile.DATA_R2, value));
+                Thread.sleep(1500);
+                mCounter2++;
+            }
+        }
+        catch (Exception e){
+
+        }
+    });
+
     abstract class BleOperationType { }
 
     class Notify extends BleOperationType {
@@ -106,8 +127,7 @@ public class MainActivity extends AppCompatActivity {
 
         Button btnNotify = findViewById(R.id.Notify);
         btnNotify.setOnClickListener(v -> {
-            byte[] value = ByteBuffer.allocate(4).putInt(mCounter).array();
-            notifyRegisteredDevices(SensorProfile.DATA_R, value);
+            initCounter();
         });
 
         //Init mBuf
@@ -115,6 +135,13 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < mBuf.length; i++)
         {
             mBuf[i] = val++;
+        }
+
+        //Init mBuf2
+        byte val2 = 60;
+        for (int i = 0; i < mBuf2.length; i++)
+        {
+            mBuf2[i] = val2++;
         }
 
         mBluetoothManager = (BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
@@ -138,6 +165,15 @@ public class MainActivity extends AppCompatActivity {
             startAdvertising();
             startServer();
         }
+    }
+
+    private void initCounter(){
+        mCounter = 0;
+        mbCount = true;
+        mCounter2 = 0;
+        mbCount2 = true;
+        mCounterThread.start();
+        mCounterThread2.start();
     }
 
     @Override
@@ -237,6 +273,8 @@ public class MainActivity extends AppCompatActivity {
     private void stopAdvertising() {
         if (mBluetoothLeAdvertiser == null) return;
         Log.d(TAG, "LE Advertise Stopped");
+        mbCount = false;
+        mbCount2 = false;
         mBluetoothLeAdvertiser.stopAdvertising(mAdvertiseCallback);
     }
 
@@ -247,13 +285,30 @@ public class MainActivity extends AppCompatActivity {
         // Readable Data characteristic
         BluetoothGattCharacteristic dataR = new BluetoothGattCharacteristic(SensorProfile.DATA_R,
                 //Read-only characteristic, supports notifications
-                BluetoothGattCharacteristic.PROPERTY_READ | BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+                BluetoothGattCharacteristic.PROPERTY_READ |
+                BluetoothGattCharacteristic.PROPERTY_NOTIFY,
                 BluetoothGattCharacteristic.PERMISSION_READ);
+
+        // Readable Data characteristic
+        BluetoothGattCharacteristic dataR2 = new BluetoothGattCharacteristic(SensorProfile.DATA_R2,
+                //Read-only characteristic, supports notifications
+                BluetoothGattCharacteristic.PROPERTY_READ |
+                        BluetoothGattCharacteristic.PROPERTY_NOTIFY,
+                BluetoothGattCharacteristic.PERMISSION_READ);
+
         BluetoothGattDescriptor configDescriptor = new BluetoothGattDescriptor(SensorProfile.CLIENT_CONFIG,
                 //Read/write descriptor
                 BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
+
+        BluetoothGattDescriptor configDescriptor2 = new BluetoothGattDescriptor(SensorProfile.CLIENT_CONFIG,
+                //Read/write descriptor
+                BluetoothGattDescriptor.PERMISSION_READ | BluetoothGattDescriptor.PERMISSION_WRITE);
+
         dataR.addDescriptor(configDescriptor);
+        dataR2.addDescriptor(configDescriptor2);
+
         service.addCharacteristic(dataR);
+        service.addCharacteristic(dataR2);
 
         // Writeable Data characteristic
         BluetoothGattCharacteristic dataW = new BluetoothGattCharacteristic(SensorProfile.DATA_W,
@@ -311,6 +366,7 @@ public class MainActivity extends AppCompatActivity {
         public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 Log.i(TAG, "BluetoothDevice CONNECTED: " + device);
+                mRegisteredDevice = device;
 //                stopAdvertising();
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
 //                startAdvertising();
@@ -353,8 +409,8 @@ public class MainActivity extends AppCompatActivity {
         public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
             Log.d(TAG, "onCharacteristicWriteRequest");
             if (SensorProfile.DATA_W.equals(characteristic.getUuid())) {
-                initCounter(device);
-                Log.d(TAG, "onCharacteristicWriteRequest, value=" + String.format("0x%2x%2x", value[1], value[0]));
+                Log.d(TAG, "onCharacteristicWriteRequest, value length=" + value.length);
+                //Log.d(TAG, "onCharacteristicWriteRequest, value=" + String.format("0x%2x%2x", value[1], value[0]));
                 if (responseNeeded)
                     mBluetoothGattServer.sendResponse(device, requestId, GATT_SUCCESS, offset, value);
             } else {
@@ -377,7 +433,7 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     returnValue = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE;
                 }
-                mBluetoothGattServer.sendResponse(device, requestId, GATT_FAILURE, 0, returnValue);
+                mBluetoothGattServer.sendResponse(device, requestId, GATT_SUCCESS, 0, returnValue);
             } else {
                 Log.w(TAG, "Unknown descriptor read request");
                 mBluetoothGattServer.sendResponse(device, requestId, GATT_FAILURE, 0, null);
@@ -391,11 +447,11 @@ public class MainActivity extends AppCompatActivity {
                                              BluetoothGattDescriptor descriptor,
                                              boolean preparedWrite, boolean responseNeeded,
                                              int offset, byte[] value) {
-            Log.d(TAG, "onDescriptorWriteRequest");
+            Log.d(TAG, "onDescriptorWriteRequest. request ID = " + requestId);
             if (SensorProfile.CLIENT_CONFIG.equals(descriptor.getUuid())) {
                 if (Arrays.equals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE, value)) {
                     Log.d(TAG, "Subscribe device to notifications: " + device);
-                    initCounter(device);
+                    mRegisteredDevice = device;
                 } else if (Arrays.equals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE, value)) {
                     Log.d(TAG, "Unsubscribe device from notifications: " + device);
                     mRegisteredDevice = null;
@@ -412,12 +468,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }
 
-        private void initCounter(BluetoothDevice device){
-            mRegisteredDevice = device;
-            mCounter = 0;
-            mbCount = true;
-            mCounterThread.start();
-        }
 
         @Override
         public void onMtuChanged(BluetoothDevice device, int mtu) {

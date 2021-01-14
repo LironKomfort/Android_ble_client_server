@@ -40,23 +40,18 @@ public class MainActivity extends AppCompatActivity {
 
     private final String TAG = "BLE Client";
     private final int LOCATION_PERMISSION = 66;
-    private final String SENSOR_ID = "ZTO25M141752";
+    private final String SENSOR_ID = "DonisiSensor";
 
     private BluetoothManager mBluetoothManager;
     private BluetoothAdapter mBluetoothAdapter;
 
     private BluetoothLeScanner mBluetoothLeScanner;
     private boolean mBLEScanning;
-//    private boolean mBTScanning;
-    private Handler mConnectionHandler = new Handler();
 
     private BluetoothGatt mBluetoothGatt;
 
     private Button mBLEScanBtn;
     private Button mBLEWrite;
-//    private Button mBTScanBtn;
-
-//    private DiscoveryReceiver mDiscoveryReceiver;
 
     private ConcurrentLinkedQueue<BleOperationType> mOperationQueue = new ConcurrentLinkedQueue<>();
     private BleOperationType mPendingOperation = null;
@@ -70,7 +65,6 @@ public class MainActivity extends AppCompatActivity {
 
         mBLEScanBtn = findViewById(R.id.BLEScanBtn);
         mBLEWrite = findViewById(R.id.BLEWrite);
-//        mBTScanBtn = findViewById(R.id.BTScanBtn);
 
         mBluetoothManager = (BluetoothManager) getSystemService(BLUETOOTH_SERVICE);
         mBluetoothAdapter = mBluetoothManager.getAdapter();
@@ -114,7 +108,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void init(){
         mBluetoothLeScanner = BluetoothAdapter.getDefaultAdapter().getBluetoothLeScanner();
-//        mDiscoveryReceiver = new DiscoveryReceiver();
 
         mBLEScanBtn.setOnClickListener(v ->
                 toggleLeScan()
